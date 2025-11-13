@@ -1,4 +1,4 @@
-import { Device, Telemetry, Event, AlarmRule } from "@/types/energy";
+import { Device, Telemetry, Event, AlarmRule, User, WaveformPoint, HarmonicData, EnergyConsumption } from "@/types/energy";
 
 export const mockDevices: Device[] = [
   {
@@ -184,5 +184,77 @@ export const mockHistoricalData = (deviceId: string, hours: number = 24) => {
     data.push(telemetry);
   }
 
+  return data;
+};
+
+export const mockUsers: User[] = [
+  { id: "1", name: "João Silva", email: "joao.silva@empresa.com", role: "Administrador", avatar: "" },
+  { id: "2", name: "Maria Santos", email: "maria.santos@empresa.com", role: "Gestor", avatar: "" },
+  { id: "3", name: "Pedro Oliveira", email: "pedro.oliveira@empresa.com", role: "Técnico", avatar: "" },
+];
+
+export const mockWaveformData = (deviceId: string): WaveformPoint[] => {
+  const points: WaveformPoint[] = [];
+  const numPoints = 100;
+  const now = new Date();
+  
+  for (let i = 0; i < numPoints; i++) {
+    const angle = (i / numPoints) * 2 * Math.PI;
+    const phaseShift = 0.3;
+    
+    points.push({
+      point: i,
+      V: 127 + 50 * Math.sin(angle),
+      I: 3 + 1.5 * Math.sin(angle - phaseShift),
+      timestamp: new Date(now.getTime() - (numPoints - i) * 20).toISOString(),
+    });
+  }
+  
+  return points;
+};
+
+export const mockHarmonicData = (): HarmonicData[] => {
+  return [
+    { harmonic: 1, V_magnitude: 100, I_magnitude: 100, V_phase: 0, I_phase: 0 },
+    { harmonic: 3, V_magnitude: 2.8, I_magnitude: 4.2, V_phase: 45, I_phase: 30 },
+    { harmonic: 5, V_magnitude: 1.5, I_magnitude: 3.8, V_phase: -20, I_phase: -15 },
+    { harmonic: 7, V_magnitude: 0.9, I_magnitude: 2.1, V_phase: 10, I_phase: 5 },
+    { harmonic: 9, V_magnitude: 0.5, I_magnitude: 1.2, V_phase: -5, I_phase: -10 },
+    { harmonic: 11, V_magnitude: 0.3, I_magnitude: 0.8, V_phase: 15, I_phase: 20 },
+    { harmonic: 13, V_magnitude: 0.2, I_magnitude: 0.5, V_phase: -8, I_phase: -12 },
+  ];
+};
+
+export const mockEnergyConsumption = (period: string): EnergyConsumption[] => {
+  const data: EnergyConsumption[] = [];
+  const now = new Date();
+  
+  let numPeriods = 24;
+  let intervalMs = 60 * 60 * 1000;
+  
+  if (period === "7d") {
+    numPeriods = 7;
+    intervalMs = 24 * 60 * 60 * 1000;
+  } else if (period === "30d") {
+    numPeriods = 30;
+    intervalMs = 24 * 60 * 60 * 1000;
+  } else if (period === "12m") {
+    numPeriods = 12;
+    intervalMs = 30 * 24 * 60 * 60 * 1000;
+  }
+  
+  for (let i = 0; i < numPeriods; i++) {
+    const baseEnergy = period === "24h" ? 3 : period === "7d" ? 65 : period === "30d" ? 60 : 1800;
+    const variation = Math.random() * 0.3 - 0.15;
+    
+    data.push({
+      timestamp: new Date(now.getTime() - (numPeriods - i) * intervalMs).toISOString(),
+      energyKWh: baseEnergy * (1 + variation),
+      avgPower: baseEnergy * (1 + variation) * (period === "24h" ? 1 : 1 / 24),
+      maxPower: baseEnergy * (1 + variation + 0.2) * (period === "24h" ? 1.5 : 1.5 / 24),
+      minPower: baseEnergy * (1 + variation - 0.1) * (period === "24h" ? 0.5 : 0.5 / 24),
+    });
+  }
+  
   return data;
 };

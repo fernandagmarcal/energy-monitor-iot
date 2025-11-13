@@ -8,6 +8,9 @@ import {
   Map,
   Settings,
   HelpCircle,
+  Activity,
+  BarChart3,
+  Zap,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +34,21 @@ const menuItems = [
     title: "Dispositivos",
     url: "/dispositivos",
     icon: Radio,
+  },
+  {
+    title: "Forma de Onda",
+    url: "/forma-de-onda",
+    icon: Activity,
+  },
+  {
+    title: "Harmônicos",
+    url: "/harmonicos",
+    icon: BarChart3,
+  },
+  {
+    title: "Consumo",
+    url: "/consumo",
+    icon: Zap,
   },
   {
     title: "Análises",

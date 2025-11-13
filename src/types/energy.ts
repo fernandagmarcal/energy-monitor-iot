@@ -31,6 +31,29 @@ export interface Telemetry {
   };
 }
 
+export interface WaveformPoint {
+  point: number;
+  V: number;
+  I: number;
+  timestamp: string;
+}
+
+export interface HarmonicData {
+  harmonic: number;
+  V_magnitude: number;
+  I_magnitude: number;
+  V_phase: number;
+  I_phase: number;
+}
+
+export interface EnergyConsumption {
+  timestamp: string;
+  energyKWh: number;
+  avgPower: number;
+  maxPower: number;
+  minPower: number;
+}
+
 export type Severity = "Crítico" | "Alto" | "Médio" | "Info";
 
 export interface Event {
