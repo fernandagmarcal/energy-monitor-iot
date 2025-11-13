@@ -8,7 +8,7 @@ Utilizando um circuito de hardware dedicado, o sistema coleta dados brutos de te
 * **Fator de Potência (FP)**
 * **Distorção Harmônica Total (THD)**
 
-O frontend, construído com Lovable, oferece um painel de controle completo com:
+O frontend, construído com ajuda da ferramenta Lovable, está totalmente configurado e integrado à API, ajustando e exibindo os dados obtidos diretamente do circuito de medição. Ele oferece um painel de controle completo com:
 * Visualizações de **forma de onda instantânea**.
 * Análise detalhada de **harmônicos**.
 * Histórico de **consumo de energia**.
