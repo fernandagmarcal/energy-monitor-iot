@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Devices from "./pages/Devices";
@@ -18,6 +20,7 @@ import Map from "./pages/Map";
 import Admin from "./pages/Admin";
 import Help from "./pages/Help";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,24 +32,27 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route element={<Layout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/dispositivos" element={<Devices />} />
-              <Route path="/dispositivos/:deviceId" element={<DeviceDetail />} />
-              <Route path="/forma-de-onda" element={<Waveform />} />
-              <Route path="/harmonicos" element={<Harmonics />} />
-              <Route path="/consumo" element={<EnergyConsumption />} />
-              <Route path="/analises" element={<Analytics />} />
-              <Route path="/alarmes" element={<Alarms />} />
-              <Route path="/relatorios" element={<Reports />} />
-              <Route path="/mapa" element={<Map />} />
-              <Route path="/admin" element={<Admin />} />
-              <Route path="/ajuda" element={<Help />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/recuperar-senha" element={<ResetPassword />} />
+              <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/dispositivos" element={<Devices />} />
+                <Route path="/dispositivos/:deviceId" element={<DeviceDetail />} />
+                <Route path="/forma-de-onda" element={<Waveform />} />
+                <Route path="/harmonicos" element={<Harmonics />} />
+                <Route path="/consumo" element={<EnergyConsumption />} />
+                <Route path="/analises" element={<Analytics />} />
+                <Route path="/alarmes" element={<Alarms />} />
+                <Route path="/relatorios" element={<Reports />} />
+                <Route path="/mapa" element={<Map />} />
+                <Route path="/admin" element={<Admin />} />
+                <Route path="/ajuda" element={<Help />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
