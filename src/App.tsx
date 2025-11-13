@@ -8,6 +8,9 @@ import { Layout } from "@/components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Devices from "./pages/Devices";
 import DeviceDetail from "./pages/DeviceDetail";
+import Waveform from "./pages/Waveform";
+import Harmonics from "./pages/Harmonics";
+import EnergyConsumption from "./pages/EnergyConsumption";
 import Analytics from "./pages/Analytics";
 import Alarms from "./pages/Alarms";
 import Reports from "./pages/Reports";
@@ -32,6 +35,9 @@ const App = () => (
               <Route path="/" element={<Dashboard />} />
               <Route path="/dispositivos" element={<Devices />} />
               <Route path="/dispositivos/:deviceId" element={<DeviceDetail />} />
+              <Route path="/forma-de-onda" element={<Waveform />} />
+              <Route path="/harmonicos" element={<Harmonics />} />
+              <Route path="/consumo" element={<EnergyConsumption />} />
               <Route path="/analises" element={<Analytics />} />
               <Route path="/alarmes" element={<Alarms />} />
               <Route path="/relatorios" element={<Reports />} />
