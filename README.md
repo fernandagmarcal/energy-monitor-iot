@@ -2,7 +2,7 @@
 
 Este projeto é um **Monitoramento Inteligente de Energia Elétrica (Energy Monitor IoT)**, desenvolvido para aquisição, processamento e visualização em tempo real de grandezas elétricas.
 
-Utilizando um circuito de hardware dedicado, o sistema coleta dados brutos de tensão e corrente, que são processados por uma API backend (módulo `API_IOT`) para calcular métricas cruciais como:
+Utilizando um circuito de hardware dedicado, o sistema coleta dados brutos de tensão e corrente, que são processados por uma API backend (módulo `API_IOT` https://github.com/joao-fcosta/API_IOT) para calcular métricas cruciais como:
 * **Potência Ativa (W)**
 * **Módulos RMS** (Tensão e Corrente efetivas)
 * **Fator de Potência (FP)**
