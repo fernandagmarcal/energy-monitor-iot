@@ -1,32 +1,80 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { mockDevices, mockEnergyConsumption } from "@/lib/mockData";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from "recharts";
 import { TrendingUp, Download, Calendar } from "lucide-react";
 import { formatNumber } from "@/lib/formatters";
 import { toast } from "sonner";
+import api from "@/lib/api";
+
+type Row = Record<string, any>;
 
 const EnergyConsumption = () => {
   const [selectedDevice, setSelectedDevice] = useState("med-TRF-01");
   const [timeRange, setTimeRange] = useState("7d");
 
-  const periods = mockEnergyConsumption(timeRange);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [devices, setDevices] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const totalEnergy = periods.reduce((acc, p) => acc + p.energyKWh, 0);
+  // -------------------------
+  // 1. Buscar dados da API
+  // -------------------------
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        setLoading(true);
+
+        const [plan1, plan2] = await Promise.all([
+          api.get("/data/Planilha1.xlsx"),
+          api.get("/data/Planilha2.xlsx"),
+        ]);
+
+        const safe = (resp: any) =>
+          resp?.data?.data?.[0]?.data ?? [];
+
+        setRows(safe(plan1));      // Dados de corrente/tensão
+        setDevices(safe(plan2));   // Lista de dispositivos
+      } catch (e) {
+        console.error("Erro ao carregar:", e);
+        toast.error("Falha ao carregar dados da API");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAll();
+  }, []);
+
+  if (loading) {
+    return <p className="p-6">Carregando dados...</p>;
+  }
+
+  // -------------------------
+  // 2. Transformar dados da API em períodos
+  // -------------------------
+  const periods = rows.map((r, i) => ({
+    period:
+      timeRange === "24h" ? `${i}h` :
+      timeRange === "7d" ? `Dia ${i + 1}` :
+      timeRange === "30d" ? `Dia ${i + 1}` : `Mês ${i + 1}`,
+    energiaKWh: Math.abs(Number(r["Tensão em V"]) * Number(r["Corrente em A"])) / 1000,
+    avgPower: Math.abs(Number(r["Tensão em V"]) * Number(r["Corrente em A"])),
+    maxPower: Math.abs(Number(r["Tensão em V"]) * Number(r["Corrente em A"])) * 1.15,
+  }));
+
+  const totalEnergy = periods.reduce((acc, p) => acc + p.energiaKWh, 0);
   const avgPower = periods.reduce((acc, p) => acc + p.avgPower, 0) / periods.length;
   const peakPower = Math.max(...periods.map(p => p.maxPower));
 
   const handleExport = () => {
-    toast.success("Relatório de consumo exportado com sucesso!");
+    toast.success("Relatório exportado com sucesso!");
   };
 
-  const chartData = periods.map((p, idx) => ({
-    period: timeRange === "24h" ? `${idx}h` : 
-            timeRange === "7d" ? `Dia ${idx + 1}` : 
-            timeRange === "30d" ? `Dia ${idx + 1}` : `Mês ${idx + 1}`,
-    energia: p.energyKWh,
+  const chartData = periods.map(p => ({
+    period: p.period,
+    energia: p.energiaKWh,
     potenciaMedia: p.avgPower,
     potenciaPico: p.maxPower,
   }));
@@ -36,9 +84,7 @@ const EnergyConsumption = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Consumo de Energia</h1>
-          <p className="text-muted-foreground">
-            Análise histórica de consumo e demanda
-          </p>
+          <p className="text-muted-foreground">Dados reais da API</p>
         </div>
         <Button onClick={handleExport}>
           <Download className="mr-2 h-4 w-4" />
@@ -52,9 +98,9 @@ const EnergyConsumption = () => {
             <SelectValue placeholder="Selecionar dispositivo" />
           </SelectTrigger>
           <SelectContent>
-            {mockDevices.map((device) => (
-              <SelectItem key={device.deviceId} value={device.deviceId}>
-                {device.name}
+            {devices.map((device, idx) => (
+              <SelectItem key={idx} value={device.deviceId || `dev-${idx}`}>
+                {device.name || "Sem nome"}
               </SelectItem>
             ))}
           </SelectContent>
@@ -73,6 +119,7 @@ const EnergyConsumption = () => {
         </Select>
       </div>
 
+      {/* CARDS */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -81,9 +128,7 @@ const EnergyConsumption = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatNumber(totalEnergy, 1)} kWh</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              No período selecionado
-            </p>
+            <p className="text-xs text-muted-foreground mt-1">No período selecionado</p>
           </CardContent>
         </Card>
 
@@ -94,9 +139,6 @@ const EnergyConsumption = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatNumber(avgPower, 1)} kW</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Demanda média do período
-            </p>
           </CardContent>
         </Card>
 
@@ -107,13 +149,11 @@ const EnergyConsumption = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatNumber(peakPower, 1)} kW</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Demanda máxima registrada
-            </p>
           </CardContent>
         </Card>
       </div>
 
+      {/* GRAFICO DE ENERGIA */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -124,131 +164,36 @@ const EnergyConsumption = () => {
         <CardContent>
           <ResponsiveContainer width="100%" height={400}>
             <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="colorEnergia" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis 
-                dataKey="period" 
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis 
-                label={{ value: 'Energia (kWh)', angle: -90, position: 'insideLeft' }}
-                tick={{ fontSize: 12 }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                }}
-              />
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" tick={{ fontSize: 12 }} />
+              <YAxis label={{ value: "Energia (kWh)", angle: -90, position: "insideLeft" }} />
+              <Tooltip />
               <Legend />
-              <Area
-                type="monotone"
-                dataKey="energia"
-                stroke="hsl(var(--chart-1))"
-                fillOpacity={1}
-                fill="url(#colorEnergia)"
-                name="Energia (kWh)"
-              />
+              <Area type="monotone" dataKey="energia" stroke="#4f46e5" fill="#a5b4fc" />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
+      {/* GRAFICO DE POTÊNCIA */}
       <Card>
         <CardHeader>
-          <CardTitle>Curva de Demanda - Potência</CardTitle>
+          <CardTitle>Curva de Potência</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={400}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis 
-                dataKey="period" 
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis 
-                label={{ value: 'Potência (kW)', angle: -90, position: 'insideLeft' }}
-                tick={{ fontSize: 12 }}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                }}
-              />
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="period" />
+              <YAxis label={{ value: "Potência (kW)", angle: -90, position: "insideLeft" }} />
+              <Tooltip />
               <Legend />
-              <Line
-                type="monotone"
-                dataKey="potenciaMedia"
-                stroke="hsl(var(--chart-2))"
-                name="Potência Média (kW)"
-                strokeWidth={2}
-              />
-              <Line
-                type="monotone"
-                dataKey="potenciaPico"
-                stroke="hsl(var(--chart-3))"
-                name="Potência Pico (kW)"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-              />
+              <Line type="monotone" dataKey="potenciaMedia" stroke="#2563eb" strokeWidth={2} />
+              <Line type="monotone" dataKey="potenciaPico" stroke="#f43f5e" strokeWidth={2} strokeDasharray="5 5" />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Estimativa de Custos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Tarifa média:</span>
-                <span className="font-medium">R$ 0,85/kWh</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Custo estimado:</span>
-                <span className="font-bold text-lg">R$ {formatNumber(totalEnergy * 0.85, 2)}</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                * Valores estimados baseados em tarifa média. Consulte sua concessionária para valores exatos.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Indicadores de Eficiência</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Fator de carga:</span>
-                <span className="font-medium">{formatNumber((avgPower / peakPower) * 100, 1)}%</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Consumo médio diário:</span>
-                <span className="font-medium">
-                  {formatNumber(totalEnergy / (timeRange === "24h" ? 1 : timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 365), 1)} kWh/dia
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Fator de carga alto indica uso mais eficiente da energia.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 };

@@ -17,38 +17,44 @@ interface DataPoint {
 export const RealTimeChart = ({ deviceId }: { deviceId: string }) => {
   const [data, setData] = useState<DataPoint[]>([]);
 
+  // Função de segurança contra valores inválidos
+  const safeNumber = (value: any): number => {
+    const n = Number(value);
+    return isNaN(n) ? 0 : n;
+  };
+
   useEffect(() => {
-    // Initialize with some data
     const initialData: DataPoint[] = [];
     for (let i = 0; i < 20; i++) {
       const telemetry = generateTelemetry(deviceId);
+
       initialData.push({
         time: formatTime(telemetry.ts),
-        VA: telemetry.V.A,
-        VB: telemetry.V.B,
-        VC: telemetry.V.C,
-        IA: telemetry.I.A,
-        IB: telemetry.I.B,
-        IC: telemetry.I.C,
+        VA: safeNumber(telemetry.V.A),
+        VB: safeNumber(telemetry.V.B),
+        VC: safeNumber(telemetry.V.C),
+        IA: safeNumber(telemetry.I.A),
+        IB: safeNumber(telemetry.I.B),
+        IC: safeNumber(telemetry.I.C),
       });
     }
+
     setData(initialData);
 
-    // Simulate real-time updates
     const interval = setInterval(() => {
       const telemetry = generateTelemetry(deviceId);
-      setData((prev) => [
-        ...prev.slice(-19),
-        {
-          time: formatTime(telemetry.ts),
-          VA: telemetry.V.A,
-          VB: telemetry.V.B,
-          VC: telemetry.V.C,
-          IA: telemetry.I.A,
-          IB: telemetry.I.B,
-          IC: telemetry.I.C,
-        },
-      ]);
+
+      const newPoint: DataPoint = {
+        time: formatTime(telemetry.ts),
+        VA: safeNumber(telemetry.V.A),
+        VB: safeNumber(telemetry.V.B),
+        VC: safeNumber(telemetry.V.C),
+        IA: safeNumber(telemetry.I.A),
+        IB: safeNumber(telemetry.I.B),
+        IC: safeNumber(telemetry.I.C),
+      };
+
+      setData((prev) => [...prev.slice(-19), newPoint]);
     }, 5000);
 
     return () => clearInterval(interval);
@@ -58,10 +64,10 @@ export const RealTimeChart = ({ deviceId }: { deviceId: string }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-popover border border-border rounded-lg p-3 shadow-lg">
-          <p className="text-sm font-medium mb-2">{payload[0].payload.time}</p>
+          <p className="text-sm font-medium mb-2">{payload[0]?.payload?.time}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
-              {entry.name}: {formatNumber(entry.value, 2)} {entry.name.startsWith('V') ? 'V' : 'A'}
+              {entry.name}: {formatNumber(entry.value, 2)} {entry.name.startsWith("V") ? "V" : "A"}
             </p>
           ))}
         </div>
@@ -90,6 +96,7 @@ export const RealTimeChart = ({ deviceId }: { deviceId: string }) => {
             />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
+
             <Line type="monotone" dataKey="VA" stroke="hsl(var(--chart-1))" name="Tensão A" dot={false} strokeWidth={2} />
             <Line type="monotone" dataKey="VB" stroke="hsl(var(--chart-2))" name="Tensão B" dot={false} strokeWidth={2} />
             <Line type="monotone" dataKey="VC" stroke="hsl(var(--chart-3))" name="Tensão C" dot={false} strokeWidth={2} />

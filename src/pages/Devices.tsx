@@ -1,123 +1,90 @@
-import { useState } from "react";
-import { Radio, MapPin, Clock, Wifi } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/StatusBadge";
-import { mockDevices } from "@/lib/mockData";
-import { getRelativeTime } from "@/lib/formatters";
-import { useNavigate } from "react-router-dom";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { useState, useEffect } from "react";
+import api from "@/lib/api"; 
+
+type DataRow = Record<string, string>;
 
 const Devices = () => {
-  const navigate = useNavigate();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [rows, setRows] = useState<DataRow[]>([]);
 
-  const filteredDevices = mockDevices.filter((device) => {
-    const matchesSearch = 
-      device.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      device.location.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || device.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  useEffect(() => {
+    const fetchExcelData = async () => {
+      try {
+        setLoading(true);
+        const response = await api.get('/data/Planilha1.xlsx'); 
+        
+        const dataList: DataRow[] = response.data.data[0].data;
+
+        if (dataList && dataList.length > 0) {
+          const firstItemKeys = Object.keys(dataList[0]);
+          setHeaders(firstItemKeys); 
+          setRows(dataList); 
+        }
+        
+        setError(null);
+      } catch (err) {
+        console.error("Erro ao buscar dados da API:", err);
+        setError("Falha ao carregar dados. O backend Go está rodando?");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchExcelData();
+  }, []); 
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <h1 className="text-3xl font-bold tracking-tight">Dispositivos</h1>
+        <p className="text-muted-foreground">Conectando ao backend Go...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <h1 className="text-3xl font-bold tracking-tight">Erro na Conexão</h1>
+        <p className="text-red-500">{error}</p>
+        <p className="mt-2">Verifique o console (F12) e se o servidor `go run main.go` está rodando.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Dispositivos</h1>
-        <p className="text-muted-foreground">
-          Gerenciamento de pontos de medição e dispositivos IoT
-        </p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4">
-        <Input
-          placeholder="Buscar dispositivo ou localização..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="max-w-sm"
-        />
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos</SelectItem>
-            <SelectItem value="online">Online</SelectItem>
-            <SelectItem value="offline">Offline</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredDevices.map((device) => (
-          <Card
-            key={device.deviceId}
-            className="cursor-pointer hover:shadow-lg transition-shadow"
-            onClick={() => navigate(`/dispositivos/${device.deviceId}`)}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                {device.name}
-              </CardTitle>
-              <StatusBadge severity={device.status}>
-                {device.status === "online" ? "Online" : "Offline"}
-              </StatusBadge>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className={`h-16 w-16 rounded-lg mx-auto flex items-center justify-center ${
-                device.status === "online" ? "bg-success/10" : "bg-offline/10"
-              }`}>
-                <Radio className={`h-8 w-8 ${
-                  device.status === "online" ? "text-success" : "text-offline"
-                }`} />
-              </div>
-
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <MapPin className="h-4 w-4" />
-                  <span>{device.location}</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  <span>{getRelativeTime(device.lastSeen)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Wifi className="h-4 w-4" />
-                  <span>Firmware v{device.fwVersion}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-1 pt-2">
-                {device.phases.map((phase) => (
-                  <div
-                    key={phase}
-                    className="flex-1 h-1 rounded-full bg-chart-1"
-                  />
+      <div className="border rounded-lg overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              {headers.map((header) => (
+                <th key={header} className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {headers.map((header) => (
+                  <td key={header} className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">
+                    {row[header]}
+                  </td>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      {filteredDevices.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Radio className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-lg font-medium">Nenhum dispositivo encontrado</p>
-            <p className="text-sm text-muted-foreground">
-              Tente ajustar os filtros de busca
-            </p>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 };

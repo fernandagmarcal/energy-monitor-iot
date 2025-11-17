@@ -1,49 +1,162 @@
+import { useState, useEffect } from "react";
 import { Activity, Zap, Gauge, AlertTriangle, Radio as RadioIcon } from "lucide-react";
 import { MetricCard } from "@/components/MetricCard";
 import { RealTimeChart } from "@/components/RealTimeChart";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { mockDevices, mockEvents } from "@/lib/mockData";
 import { formatDateTime } from "@/lib/formatters";
 import { useNavigate } from "react-router-dom";
+import api from "@/lib/api";
+
+type ApiRow = Record<string, any>;
+const toSafeLower = (v: any) => String(v || "").toLowerCase();
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const onlineDevices = mockDevices.filter(d => d.status === "online").length;
-  const activeAlarms = mockEvents.filter(e => e.status === "ativo").length;
+
+  const [metricData, setMetricData] = useState<ApiRow | null>(null);
+  const [deviceList, setDeviceList] = useState<ApiRow[]>([]);
+  const [eventList, setEventList] = useState<ApiRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Função genérica para extrair planilhas do Go
+  const safeExtract = (resp: any): ApiRow[] => {
+    if (!resp || !resp.data || !resp.data.data) return [];
+    const arr = resp.data.data;
+    if (!Array.isArray(arr) || !arr[0] || !Array.isArray(arr[0].data)) return [];
+    return arr[0].data;
+  };
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [m, d, e] = await Promise.all([
+          api.get("/data/Planilha1.xlsx"),
+          api.get("/data/Planilha2.xlsx"),
+          api.get("/data/Planilha3.xlsx"),
+        ]);
+
+        console.log("RAW_1:", m.data);
+        console.log("RAW_2:", d.data);
+        console.log("RAW_3:", e.data);
+
+        // PLANILHA 1 → MÉTRICAS
+        const metrics = safeExtract(m);
+        if (metrics.length > 0) setMetricData(metrics[0]);
+
+        // PLANILHA 2 → DISPOSITIVOS
+        const rawDevices = safeExtract(d);
+        const devices = rawDevices.map((item: any, index: number) => ({
+          deviceId: `dev-${index + 1}`,
+          name: `Dispositivo ${item["Pontos"] || index + 1}`,
+          location: "Sem localização",
+
+          // Status: se tensão for positiva → online
+          status:
+            Number(item["Tensão em V"]) > 0
+              ? "online"
+              : Number(item["Tensão em V"]) === 0
+              ? "offline"
+              : "offline",
+
+          corrente: item["Corrente em A"] || null,
+          tensao: item["Tensão em V"] || null,
+          adcCorrente: item["ADC Corrente"] || null,
+          adcTensao: item["ADC Tensão"] || null,
+        }));
+
+        setDeviceList(devices);
+
+        // PLANILHA 3 → ALARMES
+        const rawEvents = safeExtract(e);
+        const events = rawEvents.map((item: any, index: number) => {
+          const vTensao = Number(item["Tensão em V"]);
+          const vCorrente = Number(item["Corrente em A"]);
+
+          // Regras simples para gerar alarmes reais
+          let severity = "normal";
+          let status = "inativo";
+
+          if (vTensao < -170 || vCorrente < -2.8) {
+            severity = "critico";
+            status = "ativo";
+          } else if (vTensao < -168) {
+            severity = "alerta";
+            status = "ativo";
+          }
+
+          return {
+            id: index + 1,
+            deviceId: `dev-${item["Pontos"] || index + 1}`,
+            tsStart: new Date().toISOString(),
+            severity,
+            status,
+            type: "Anomalia de Energia",
+            tensao: vTensao,
+            corrente: vCorrente,
+          };
+        });
+
+        setEventList(events);
+      } catch (err) {
+        console.error("ERRO FATAL:", err);
+        setError("Erro ao buscar dados. Verifique se o servidor Go está rodando.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAll();
+  }, []);
+
+  // ESTADOS DE CARREGAMENTO / ERRO
+  if (loading) {
+    return (
+      <div className="p-6">
+        <h1 className="text-3xl font-bold">Visão Geral</h1>
+        <p className="text-muted-foreground">Carregando dados...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <h1 className="text-3xl font-bold">Erro</h1>
+        <p className="text-red-500">{error}</p>
+      </div>
+    );
+  }
+
+  // DASHBOARD
+  const onlineDevices = deviceList.filter((d) => toSafeLower(d.status) === "online").length;
+  const activeAlarms = eventList.filter((e) => toSafeLower(e.status) === "ativo").length;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Visão Geral</h1>
-        <p className="text-muted-foreground">
-          Monitoramento em tempo real da qualidade de energia
-        </p>
+        <p className="text-muted-foreground">Monitoramento em tempo real</p>
       </div>
 
+      {/* MÉTRICAS */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
-          title="Potência Total"
-          value={24.8}
-          unit="kW"
+          title="Corrente em A"
+          value={metricData ? Number(metricData["CORRENTE EM A"] || 0).toFixed(2) : "0.00"}
           icon={Zap}
-          trend={{ value: 5.2, isPositive: true }}
-          status="normal"
         />
         <MetricCard
-          title="Fator de Potência"
-          value={0.94}
+          title="Tensão em V"
+          value={metricData ? Number(metricData["TENSÃO EM V"] || 0).toFixed(2) : "0.00"}
           icon={Gauge}
-          status="normal"
         />
-        <MetricCard
-          title="THD Médio"
-          value={3.8}
-          unit="%"
-          icon={Activity}
-          status="normal"
-        />
+        <MetricCard title="Pontos" value={metricData?.["PONTOS"] || 0} icon={Activity} />
         <MetricCard
           title="Alarmes Ativos"
           value={activeAlarms}
@@ -52,47 +165,50 @@ const Dashboard = () => {
         />
       </div>
 
+      {/* GRÁFICO + DISPOSITIVOS */}
       <div className="grid gap-4 lg:grid-cols-2">
         <RealTimeChart deviceId="med-TRF-01" />
 
         <Card>
           <CardHeader>
-            <CardTitle>Status dos Dispositivos</CardTitle>
+            <CardTitle>Status dos Dispositivos (Planilha 2)</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {mockDevices.slice(0, 5).map((device) => (
+            {deviceList.slice(0, 5).map((d, i) => {
+              const isOnline = toSafeLower(d.status) === "online";
+              return (
                 <div
-                  key={device.deviceId}
-                  className="flex items-center justify-between p-3 rounded-lg border cursor-pointer hover:bg-accent transition-colors"
-                  onClick={() => navigate(`/dispositivos/${device.deviceId}`)}
+                  key={i}
+                  className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-accent"
+                  onClick={() => navigate("/dispositivos")}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                      device.status === "online" ? "bg-success/10" : "bg-offline/10"
-                    }`}>
-                      <RadioIcon className={`h-5 w-5 ${
-                        device.status === "online" ? "text-success" : "text-offline"
-                      }`} />
+                    <div
+                      className={`h-10 w-10 flex items-center justify-center rounded-lg ${
+                        isOnline ? "bg-success/10" : "bg-offline/10"
+                      }`}
+                    >
+                      <RadioIcon
+                        className={`h-5 w-5 ${isOnline ? "text-success" : "text-offline"}`}
+                      />
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{device.name}</p>
-                      <p className="text-xs text-muted-foreground">{device.location}</p>
+                      <p className="font-medium text-sm">{d.name}</p>
+                      <p className="text-xs text-muted-foreground">{d.location}</p>
                     </div>
                   </div>
-                  <StatusBadge severity={device.status}>
-                    {device.status === "online" ? "Online" : "Offline"}
-                  </StatusBadge>
+                  <StatusBadge severity={isOnline ? "online" : "offline"}>{d.status}</StatusBadge>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </CardContent>
         </Card>
       </div>
 
+      {/* ALARMES */}
       <Card>
         <CardHeader>
-          <CardTitle>Últimos Alarmes (24h)</CardTitle>
+          <CardTitle>Últimos Alarmes (Planilha 3)</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -106,32 +222,21 @@ const Dashboard = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockEvents.map((event) => {
-                const device = mockDevices.find(d => d.deviceId === event.deviceId);
+              {eventList.map((ev, i) => {
+                const dev = deviceList.find((x) => x.deviceId === ev.deviceId);
                 return (
-                  <TableRow 
-                    key={event.id}
+                  <TableRow
+                    key={i}
                     className="cursor-pointer hover:bg-accent"
-                    onClick={() => navigate('/alarmes')}
+                    onClick={() => navigate("/alarmes")}
                   >
-                    <TableCell className="font-mono text-sm">
-                      {formatDateTime(event.tsStart)}
-                    </TableCell>
-                    <TableCell>{device?.name}</TableCell>
-                    <TableCell>{event.type}</TableCell>
+                    <TableCell>{formatDateTime(ev.tsStart)}</TableCell>
+                    <TableCell>{dev?.name || "N/A"}</TableCell>
+                    <TableCell>{ev.type}</TableCell>
                     <TableCell>
-                      <StatusBadge severity={event.severity}>
-                        {event.severity}
-                      </StatusBadge>
+                      <StatusBadge severity={ev.severity}>{ev.severity}</StatusBadge>
                     </TableCell>
-                    <TableCell>
-                      <span className={`text-sm ${
-                        event.status === "ativo" ? "text-critical" : 
-                        event.status === "confirmado" ? "text-warning" : "text-muted-foreground"
-                      }`}>
-                        {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
-                      </span>
-                    </TableCell>
+                    <TableCell>{ev.status}</TableCell>
                   </TableRow>
                 );
               })}
