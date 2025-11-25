@@ -1,51 +1,115 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { mockDevices, mockHistoricalData } from "@/lib/mockData";
-import { formatNumber } from "@/lib/formatters";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend
+} from "recharts";
 import { Download, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
+import api from "@/lib/api";
+import { formatNumber } from "@/lib/formatters";
+
+// --------------------------------------
+// MAPA DE DISPOSITIVOS -> PLANILHAS
+// --------------------------------------
+const DEVICE_MAP: Record<string, string> = {
+  "med-TRF-01": "Planilha1.xlsx",
+  "med-TRF-02": "Planilha2.xlsx",
+  "med-TRF-03": "Planilha3.xlsx",
+};
+
+// Sheets possíveis
+const SHEET_NAMES = ["Página11", "Página9", "Página10", "Planilha1", "Planilha2", "Planilha3", "Sheet1"];
+
+// --------------------------------------
+// Nomes das métricas
+// --------------------------------------
+const METRIC_LABELS = {
+  P: "Potência Ativa (W)",
+  S: "Potência Aparente (VA)",
+  FP: "Fator de Potência",
+  THD_V: "THD Tensão (%)",
+  THD_I: "THD Corrente (%)",
+  freq: "Frequência (Hz)",
+};
 
 const Analytics = () => {
   const [selectedDevice, setSelectedDevice] = useState("med-TRF-01");
   const [timeRange, setTimeRange] = useState("24h");
   const [metric, setMetric] = useState("P");
 
-  const historicalData = mockHistoricalData(selectedDevice, 24);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const chartData = historicalData.map((d, idx) => ({
-    time: idx,
-    P: d.P,
-    Q: d.Q,
-    S: d.S,
-    FP: d.FP,
-    THD_V: d.THD.V,
-    THD_I: d.THD.I,
-    freq: d.freq,
-  }));
+  // --------------------------------------
+  // Carregar dados reais das planilhas
+  // --------------------------------------
+  const loadData = async () => {
+    try {
+      setLoading(true);
 
-  const handleExport = () => {
-    toast.success("Análise exportada com sucesso!");
+      const file = DEVICE_MAP[selectedDevice];
+      const res = await api.get(`/data/${file}`);
+
+      const sheets = res.data.data;
+      const sheet = sheets.find((s: any) => SHEET_NAMES.includes(s.sheet_name));
+
+      if (!sheet) {
+        console.error("Página não encontrada na planilha");
+        setChartData([]);
+        return;
+      }
+
+      const rows = sheet.data;
+
+      const processed = rows.map((row: any, index: number) => {
+        const V = Number(row["Tensão em V"] ?? 0);
+        const I = Number(row["Corrente em A"] ?? 0);
+
+        const P = V * I;
+        const S = P;
+        const FP = 1.0;
+        const freq = 60;
+
+        return {
+          time: index + 1,
+          P,
+          S,
+          FP,
+          THD_V: 0,
+          THD_I: 0,
+          freq,
+        };
+      });
+
+      setChartData(processed);
+    } catch (e) {
+      console.error("Erro ao carregar analytics:", e);
+      setChartData([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const metricInfo = {
-    P: { label: "Potência Ativa (kW)", color: "hsl(var(--chart-1))" },
-    Q: { label: "Potência Reativa (kvar)", color: "hsl(var(--chart-2))" },
-    FP: { label: "Fator de Potência", color: "hsl(var(--chart-3))" },
-    THD_V: { label: "THD Tensão (%)", color: "hsl(var(--chart-4))" },
-    freq: { label: "Frequência (Hz)", color: "hsl(var(--chart-5))" },
-  };
+  useEffect(() => {
+    loadData();
+  }, [selectedDevice, timeRange]);
+
+  const handleExport = () => toast.success("Análise exportada!");
+
+  const label = METRIC_LABELS[metric as keyof typeof METRIC_LABELS];
+
+  if (loading) return <p>Carregando dados…</p>;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Análises</h1>
-          <p className="text-muted-foreground">
-            Tendências e correlações de qualidade de energia
-          </p>
+          <p className="text-muted-foreground">Tendências extraídas dos dados reais da API</p>
         </div>
         <Button onClick={handleExport}>
           <Download className="mr-2 h-4 w-4" />
@@ -53,17 +117,17 @@ const Analytics = () => {
         </Button>
       </div>
 
+      {/* Filtros */}
       <div className="flex flex-col sm:flex-row gap-4">
+
         <Select value={selectedDevice} onValueChange={setSelectedDevice}>
           <SelectTrigger className="w-[250px]">
-            <SelectValue placeholder="Selecionar dispositivo" />
+            <SelectValue placeholder="Dispositivo" />
           </SelectTrigger>
           <SelectContent>
-            {mockDevices.map((device) => (
-              <SelectItem key={device.deviceId} value={device.deviceId}>
-                {device.name}
-              </SelectItem>
-            ))}
+            <SelectItem value="med-TRF-01">Medidor TRF 01</SelectItem>
+            <SelectItem value="med-TRF-02">Medidor TRF 02</SelectItem>
+            <SelectItem value="med-TRF-03">Medidor TRF 03</SelectItem>
           </SelectContent>
         </Select>
 
@@ -72,7 +136,6 @@ const Analytics = () => {
             <SelectValue placeholder="Período" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1h">Última hora</SelectItem>
             <SelectItem value="24h">Últimas 24h</SelectItem>
             <SelectItem value="7d">Últimos 7 dias</SelectItem>
             <SelectItem value="30d">Últimos 30 dias</SelectItem>
@@ -84,41 +147,34 @@ const Analytics = () => {
             <SelectValue placeholder="Métrica" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="P">Potência Ativa</SelectItem>
-            <SelectItem value="Q">Potência Reativa</SelectItem>
-            <SelectItem value="FP">Fator de Potência</SelectItem>
-            <SelectItem value="THD_V">THD Tensão</SelectItem>
-            <SelectItem value="freq">Frequência</SelectItem>
+            {Object.entries(METRIC_LABELS).map(([key, label]) => (
+              <SelectItem key={key} value={key}>{label}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
+      {/* Gráfico */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            {metricInfo[metric as keyof typeof metricInfo].label}
+            {label}
           </CardTitle>
         </CardHeader>
+
         <CardContent>
           <ResponsiveContainer width="100%" height={400}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis dataKey="time" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                }}
-              />
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis />
+              <Tooltip />
               <Legend />
               <Line
                 type="monotone"
                 dataKey={metric}
-                stroke={metricInfo[metric as keyof typeof metricInfo].color}
-                name={metricInfo[metric as keyof typeof metricInfo].label}
+                stroke="hsl(var(--chart-2))"
                 strokeWidth={2}
                 dot={false}
               />
@@ -127,46 +183,38 @@ const Analytics = () => {
         </CardContent>
       </Card>
 
+      {/* Estatísticas */}
       <div className="grid gap-4 md:grid-cols-3">
+
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Média</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Média</CardTitle></CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
               {formatNumber(
-                chartData.reduce((acc, d) => acc + d[metric as keyof typeof d], 0) /
-                  chartData.length
+                chartData.reduce((acc, d) => acc + d[metric], 0) / chartData.length
               )}
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Máximo</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Máximo</CardTitle></CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
-              {formatNumber(
-                Math.max(...chartData.map((d) => d[metric as keyof typeof d] as number))
-              )}
+              {formatNumber(Math.max(...chartData.map((d) => d[metric])))}
             </p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Mínimo</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Mínimo</CardTitle></CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
-              {formatNumber(
-                Math.min(...chartData.map((d) => d[metric as keyof typeof d] as number))
-              )}
+              {formatNumber(Math.min(...chartData.map((d) => d[metric])))}
             </p>
           </CardContent>
         </Card>
+
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+
 import {
   Select,
   SelectContent,
@@ -12,7 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
 import { Button } from "@/components/ui/button";
+
 import {
   AreaChart,
   Area,
@@ -25,50 +28,57 @@ import {
   LineChart,
   Line,
 } from "recharts";
+
 import { TrendingUp, Download, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { formatNumber } from "@/lib/formatters";
 
-type Row = Record<string, any>;
-
 // -----------------------------------------------------
 // HELPERS
 // -----------------------------------------------------
 
-const extractRows = (resp: any) => {
-  if (!resp?.data?.data) return [];
-  const firstSheet = resp.data.data[0];
-  return firstSheet?.data || [];
-};
-
-const getNum = (row: Row, key: string) =>
+// Normaliza número
+const getNum = (row: any, key: string) =>
   Number(
     row[key] ??
+      row[key.trim()] ??
       row[key.toUpperCase()] ??
       row[key.toLowerCase()] ??
       0
   );
 
+// Busca a sheet correta pelo nome
+const findSheet = (data: any[], names: string[]) =>
+  data.find((s: any) => names.includes(s.sheet_name));
+
 // -----------------------------------------------------
-// COMPONENT
+// COMPONENT PRINCIPAL
 // -----------------------------------------------------
 
 const EnergyConsumption = () => {
   const [selectedSheet, setSelectedSheet] = useState("plan1");
   const [timeRange, setTimeRange] = useState("7d");
 
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Guarda as planilhas carregadas
   const [sheetsData, setSheetsData] = useState({
-    plan1: [] as Row[],
-    plan2: [] as Row[],
-    plan3: [] as Row[],
+    plan1: [] as any[],
+    plan2: [] as any[],
+    plan3: [] as any[],
   });
 
+  // Mapeamento planilha -> sheet correta
+  const SHEETS = {
+    plan1: ["Página11", "Planilha1", "Sheet1"],
+    plan2: ["Página9", "Planilha2", "Sheet1"],
+    plan3: ["Página10", "Planilha3", "Sheet1"],
+  };
+
   // -----------------------------------------------------
-  // BUSCAR PLANILHAS
+  // BUSCAR TODOS OS ARQUIVOS XLSX
   // -----------------------------------------------------
 
   useEffect(() => {
@@ -82,17 +92,19 @@ const EnergyConsumption = () => {
           api.get("/data/Planilha3.xlsx"),
         ]);
 
-        const plan1Rows = extractRows(p1);
-        const plan2Rows = extractRows(p2);
-        const plan3Rows = extractRows(p3);
+        const extract = (resp: any) => resp?.data?.data ?? [];
+
+        const plan1Sheet = findSheet(extract(p1), SHEETS.plan1);
+        const plan2Sheet = findSheet(extract(p2), SHEETS.plan2);
+        const plan3Sheet = findSheet(extract(p3), SHEETS.plan3);
 
         setSheetsData({
-          plan1: plan1Rows,
-          plan2: plan2Rows,
-          plan3: plan3Rows,
+          plan1: plan1Sheet?.data ?? [],
+          plan2: plan2Sheet?.data ?? [],
+          plan3: plan3Sheet?.data ?? [],
         });
 
-        setRows(plan1Rows);
+        setRows(plan1Sheet?.data ?? []);
       } catch (err) {
         console.error("Erro ao carregar planilhas:", err);
         toast.error("Falha ao carregar dados da API.");
@@ -104,55 +116,44 @@ const EnergyConsumption = () => {
     fetchAll();
   }, []);
 
-  // -----------------------------------------------------
-  // QUANDO TROCA O DISPOSITIVO (planilha)
-  // -----------------------------------------------------
-
+  // Troca entre planilhas
   useEffect(() => {
-    if (selectedSheet === "plan1") setRows(sheetsData.plan1);
-    if (selectedSheet === "plan2") setRows(sheetsData.plan2);
-    if (selectedSheet === "plan3") setRows(sheetsData.plan3);
+    setRows(sheetsData[selectedSheet as keyof typeof sheetsData] || []);
   }, [selectedSheet, sheetsData]);
 
   if (loading) return <p className="p-6">Carregando dados...</p>;
 
   // -----------------------------------------------------
-  // TRANSFORMAÇÃO EM DADOS PARA GRÁFICO
+  // Transformação → Dados dos gráficos
   // -----------------------------------------------------
 
-  const periods = rows.map((r, i) => ({
-    period:
-      timeRange === "24h"
-        ? `${i}h`
-        : `Ponto ${i + 1}`,
+  const periods = rows.map((r, i) => {
+    const voltage = getNum(r, "Tensão em V");
+    const current = getNum(r, "Corrente em A");
 
-    energiaKWh:
-      Math.abs(getNum(r, "Tensão em V") * getNum(r, "Corrente em A")) /
-      1000,
+    const power = Math.abs(voltage * current);
 
-    avgPower: Math.abs(
-      getNum(r, "Tensão em V") * getNum(r, "Corrente em A")
-    ),
-
-    maxPower:
-      Math.abs(
-        getNum(r, "Tensão em V") * getNum(r, "Corrente em A")
-      ) * 1.15,
-  }));
+    return {
+      period: `Ponto ${i + 1}`,
+      energiaKWh: power / 1000,
+      potenciaMedia: power,
+      potenciaPico: power * 1.15,
+    };
+  });
 
   const totalEnergy = periods.reduce((a, p) => a + p.energiaKWh, 0);
-  const avgPower = periods.reduce((a, p) => a + p.avgPower, 0) / periods.length;
-  const peakPower = Math.max(...periods.map((p) => p.maxPower));
+  const avgPower = periods.reduce((a, p) => a + p.potenciaMedia, 0) / periods.length;
+  const peakPower = Math.max(...periods.map((p) => p.potenciaPico));
 
   const chartData = periods.map((p) => ({
     period: p.period,
     energia: p.energiaKWh,
-    potenciaMedia: p.avgPower,
-    potenciaPico: p.maxPower,
+    potenciaMedia: p.potenciaMedia,
+    potenciaPico: p.potenciaPico,
   }));
 
   // -----------------------------------------------------
-  // EXPORT
+  // Export
   // -----------------------------------------------------
 
   const handleExport = () => {
@@ -160,19 +161,16 @@ const EnergyConsumption = () => {
   };
 
   // -----------------------------------------------------
-  // RENDER
+  // Render
   // -----------------------------------------------------
 
   return (
     <div className="space-y-6">
+      {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Consumo de Energia
-          </h1>
-          <p className="text-muted-foreground">
-            Dados reais carregados do backend Go
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">Consumo de Energia</h1>
+          <p className="text-muted-foreground">Dados carregados do backend Go</p>
         </div>
         <Button onClick={handleExport}>
           <Download className="mr-2 h-4 w-4" />
@@ -182,27 +180,18 @@ const EnergyConsumption = () => {
 
       {/* SELECTS */}
       <div className="flex flex-col sm:flex-row gap-4">
-        {/* Seleção da planilha */}
-        <Select
-          value={selectedSheet}
-          onValueChange={setSelectedSheet}
-        >
+        <Select value={selectedSheet} onValueChange={setSelectedSheet}>
           <SelectTrigger className="w-[250px]">
             <SelectValue placeholder="Selecionar dispositivo" />
           </SelectTrigger>
-
           <SelectContent>
-            <SelectItem value="plan1">Dispositivo — Planilha 1</SelectItem>
-            <SelectItem value="plan2">Dispositivo — Planilha 2</SelectItem>
-            <SelectItem value="plan3">Dispositivo — Planilha 3</SelectItem>
+            <SelectItem value="plan1">Planilha 1 — Página11</SelectItem>
+            <SelectItem value="plan2">Planilha 2 — Página9</SelectItem>
+            <SelectItem value="plan3">Planilha 3 — Página10</SelectItem>
           </SelectContent>
         </Select>
 
-        {/* Período */}
-        <Select
-          value={timeRange}
-          onValueChange={setTimeRange}
-        >
+        <Select value={timeRange} onValueChange={setTimeRange}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="Período" />
           </SelectTrigger>
@@ -217,46 +206,31 @@ const EnergyConsumption = () => {
 
       {/* CARDS */}
       <div className="grid gap-4 md:grid-cols-3">
-        {/* Energia Total */}
         <Card>
           <CardHeader className="flex items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Energia Total
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Energia Total</CardTitle>
             <TrendingUp className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {formatNumber(totalEnergy, 2)} kWh
-            </div>
+            <div className="text-2xl font-bold">{formatNumber(totalEnergy, 2)} kWh</div>
           </CardContent>
         </Card>
 
-        {/* Potência Média */}
         <Card>
           <CardHeader className="flex items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Potência Média
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Potência Média</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {formatNumber(avgPower, 2)} W
-            </div>
+            <div className="text-2xl font-bold">{formatNumber(avgPower, 2)} W</div>
           </CardContent>
         </Card>
 
-        {/* Potência de Pico */}
         <Card>
           <CardHeader className="flex items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Potência de Pico
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Potência de Pico</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {formatNumber(peakPower, 2)} W
-            </div>
+            <div className="text-2xl font-bold">{formatNumber(peakPower, 2)} W</div>
           </CardContent>
         </Card>
       </div>
@@ -266,10 +240,9 @@ const EnergyConsumption = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            Consumo de Energia ao Longo do Tempo
+            Consumo de Energia
           </CardTitle>
         </CardHeader>
-
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
             <AreaChart data={chartData}>
@@ -278,13 +251,7 @@ const EnergyConsumption = () => {
               <YAxis />
               <Tooltip />
               <Legend />
-
-              <Area
-                type="monotone"
-                dataKey="energia"
-                stroke="#4f46e5"
-                fill="#a5b4fc"
-              />
+              <Area type="monotone" dataKey="energia" stroke="#4f46e5" fill="#a5b4fc" />
             </AreaChart>
           </ResponsiveContainer>
         </CardContent>
@@ -295,7 +262,6 @@ const EnergyConsumption = () => {
         <CardHeader>
           <CardTitle>Curva de Potência</CardTitle>
         </CardHeader>
-
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
             <LineChart data={chartData}>
@@ -304,14 +270,7 @@ const EnergyConsumption = () => {
               <YAxis />
               <Tooltip />
               <Legend />
-
-              <Line
-                type="monotone"
-                dataKey="potenciaMedia"
-                stroke="#2563eb"
-                strokeWidth={2}
-              />
-
+              <Line type="monotone" dataKey="potenciaMedia" stroke="#2563eb" strokeWidth={2} />
               <Line
                 type="monotone"
                 dataKey="potenciaPico"

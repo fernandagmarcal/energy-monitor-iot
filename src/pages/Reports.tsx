@@ -1,204 +1,259 @@
-import { useState } from "react";
-import { FileText, Download, Calendar, Filter } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FileText, Download, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { mockDevices } from "@/lib/mockData";
 import { toast } from "sonner";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import api from "@/lib/api";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from "recharts";
+import { formatNumber } from "@/lib/formatters";
+
+// -----------------------------
+// Helpers
+// -----------------------------
+
+const extractRows = (resp: any) => {
+  if (!resp?.data?.data) return [];
+  const sheet = resp.data.data[0];
+  return sheet?.data || [];
+};
+
+const num = (v: any) => Number(v ?? 0);
+
+const calculateEnergy = (V: number, I: number) => Math.abs((V * I) / 1000);
+
+// -----------------------------
+// Component
+// -----------------------------
 
 const Reports = () => {
   const [reportType, setReportType] = useState("consumo");
   const [period, setPeriod] = useState("30d");
   const [selectedDevice, setSelectedDevice] = useState("all");
 
-  const rankingData = [
-    { name: "Med TRF 01", value: 847, fp: 0.89 },
-    { name: "Med TRF 02", value: 623, fp: 0.91 },
-    { name: "QD Produção", value: 1204, fp: 0.87 },
-    { name: "QD Admin", value: 342, fp: 0.94 },
-    { name: "CCM Principal", value: 1856, fp: 0.85 },
+  const [plan1, setPlan1] = useState<any[]>([]);
+  const [plan2, setPlan2] = useState<any[]>([]);
+  const [plan3, setPlan3] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // -----------------------------
+  // Fetch Data
+  // -----------------------------
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoading(true);
+
+        const [p1, p2, p3] = await Promise.all([
+          api.get("/data/Planilha1.xlsx"),
+          api.get("/data/Planilha2.xlsx"),
+          api.get("/data/Planilha3.xlsx"),
+        ]);
+
+        setPlan1(extractRows(p1));
+        setPlan2(extractRows(p2));
+        setPlan3(extractRows(p3));
+      } catch (err) {
+        console.error(err);
+        toast.error("Erro ao carregar dados da API");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, []);
+
+  if (loading) return <p>Carregando dados…</p>;
+
+  // -----------------------------
+  // Processamento
+  // -----------------------------
+
+  const devices = [
+    { id: "plan1", name: "Dispositivo — Planilha 1", rows: plan1 },
+    { id: "plan2", name: "Dispositivo — Planilha 2", rows: plan2 },
+    { id: "plan3", name: "Dispositivo — Planilha 3", rows: plan3 },
   ];
 
-  const handleGenerateReport = () => {
-    toast.success("Relatório gerado com sucesso!");
-  };
+  const selectedDevices =
+    selectedDevice === "all"
+      ? devices
+      : devices.filter((d) => d.id === selectedDevice);
 
-  const handleExportPDF = () => {
-    toast.success("Exportando relatório em PDF...");
-  };
+  const reportRows = selectedDevices.flatMap((d) => d.rows);
 
-  const handleExportCSV = () => {
-    toast.success("Exportando relatório em CSV...");
-  };
+  const chartData = reportRows.map((r, i) => {
+    const V = num(r["Tensão em V"]);
+    const I = num(r["Corrente em A"]);
+
+    return {
+      index: i + 1,
+      energia: calculateEnergy(V, I),
+      potenciaMedia: Math.abs(V * I),
+      potenciaPico: Math.abs(V * I) * 1.15,
+    };
+  });
+
+  const totalEnergy = chartData.reduce((a, b) => a + b.energia, 0);
+  const avgPower = chartData.reduce((a, b) => a + b.potenciaMedia, 0) / chartData.length;
+  const peakPower = Math.max(...chartData.map((p) => p.potenciaPico));
+
+  // Ranking por consumo
+  const ranking = devices.map((d) => {
+    const energy = d.rows.reduce((a, r) => {
+      const V = num(r["Tensão em V"]);
+      const I = num(r["Corrente em A"]);
+      return a + calculateEnergy(V, I);
+    }, 0);
+
+    return {
+      name: d.name,
+      value: energy,
+      fp: 0.92, // pode calcular baseado em fórmula futuramente
+    };
+  });
+
+  // -----------------------------
+  // Actions
+  // -----------------------------
+
+  const handleExportPDF = () => toast.success("Exportando PDF…");
+  const handleExportCSV = () => toast.success("Exportando CSV…");
+  const handleGenerateReport = () => toast.success("Relatório gerado!");
+
+  // -----------------------------
+  // Render
+  // -----------------------------
 
   return (
     <div className="space-y-6">
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Relatórios</h1>
-          <p className="text-muted-foreground">
-            Geração de relatórios de consumo e qualidade de energia
-          </p>
+          <p className="text-muted-foreground">Com base em dados reais da API</p>
         </div>
+
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleExportCSV}>
-            <Download className="mr-2 h-4 w-4" />
-            CSV
+            <Download className="mr-2 h-4 w-4" /> CSV
           </Button>
           <Button onClick={handleExportPDF}>
-            <FileText className="mr-2 h-4 w-4" />
-            PDF
+            <FileText className="mr-2 h-4 w-4" /> PDF
           </Button>
         </div>
       </div>
 
+      {/* Configuração */}
       <Card>
         <CardHeader>
           <CardTitle>Configuração do Relatório</CardTitle>
         </CardHeader>
+
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
+
+            {/* Tipo */}
             <div className="space-y-2">
-              <Label htmlFor="reportType">Tipo de Relatório</Label>
+              <Label>Tipo</Label>
               <Select value={reportType} onValueChange={setReportType}>
-                <SelectTrigger id="reportType">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="consumo">Consumo de Energia</SelectItem>
-                  <SelectItem value="qualidade">Qualidade de Energia</SelectItem>
-                  <SelectItem value="eventos">Eventos e Alarmes</SelectItem>
-                  <SelectItem value="conformidade">Conformidade</SelectItem>
+                  <SelectItem value="consumo">Consumo</SelectItem>
+                  <SelectItem value="qualidade">Qualidade</SelectItem>
+                  <SelectItem value="eventos">Eventos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Período */}
             <div className="space-y-2">
-              <Label htmlFor="period">Período</Label>
+              <Label>Período</Label>
               <Select value={period} onValueChange={setPeriod}>
-                <SelectTrigger id="period">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="7d">Últimos 7 dias</SelectItem>
-                  <SelectItem value="30d">Últimos 30 dias</SelectItem>
-                  <SelectItem value="90d">Últimos 90 dias</SelectItem>
-                  <SelectItem value="custom">Período personalizado</SelectItem>
+                  <SelectItem value="7d">7 dias</SelectItem>
+                  <SelectItem value="30d">30 dias</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
+            {/* Dispositivo */}
             <div className="space-y-2">
-              <Label htmlFor="device">Dispositivo</Label>
+              <Label>Dispositivo</Label>
               <Select value={selectedDevice} onValueChange={setSelectedDevice}>
-                <SelectTrigger id="device">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos os dispositivos</SelectItem>
-                  {mockDevices.map((device) => (
-                    <SelectItem key={device.deviceId} value={device.deviceId}>
-                      {device.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="plan1">Planilha 1</SelectItem>
+                  <SelectItem value="plan2">Planilha 2</SelectItem>
+                  <SelectItem value="plan3">Planilha 3</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
           </div>
 
-          <Button onClick={handleGenerateReport} className="w-full">
-            <Filter className="mr-2 h-4 w-4" />
-            Gerar Relatório
+          <Button className="w-full" onClick={handleGenerateReport}>
+            <Filter className="mr-2 h-4 w-4" /> Gerar Relatório
           </Button>
         </CardContent>
       </Card>
 
+      {/* Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Consumo Total</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Consumo Total</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">4.872 kWh</p>
-            <p className="text-xs text-muted-foreground mt-1">Período selecionado</p>
+            <p className="text-2xl font-bold">{formatNumber(totalEnergy, 2)} kWh</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">FP Médio</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Potência Média</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">0,89</p>
-            <p className="text-xs text-critical mt-1">Abaixo do ideal (0,92)</p>
+            <p className="text-2xl font-bold">{formatNumber(avgPower, 2)} W</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Total de Eventos</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Potência de Pico</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">23</p>
-            <p className="text-xs text-muted-foreground mt-1">5 críticos, 18 médios</p>
+            <p className="text-2xl font-bold">{formatNumber(peakPower, 2)} W</p>
           </CardContent>
         </Card>
       </div>
 
+      {/* Ranking */}
       <Card>
-        <CardHeader>
-          <CardTitle>Ranking de Pontos por Consumo</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Ranking de Consumo</CardTitle></CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={rankingData}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--popover))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "var(--radius)",
-                }}
-              />
+            <BarChart data={ranking}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
               <Legend />
-              <Bar dataKey="value" fill="hsl(var(--chart-1))" name="Consumo (kWh)" />
+              <Bar dataKey="value" fill="hsl(var(--chart-1))" />
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Conformidade com Padrões</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {rankingData.map((device) => (
-              <div key={device.name} className="flex items-center justify-between">
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{device.name}</p>
-                  <div className="mt-2 h-2 w-full bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${
-                        device.fp >= 0.92 ? "bg-success" : device.fp >= 0.85 ? "bg-warning" : "bg-critical"
-                      }`}
-                      style={{ width: `${(device.fp / 1.0) * 100}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="ml-4 text-right">
-                  <p className="text-sm font-mono">{device.fp.toFixed(2)}</p>
-                  <p className="text-xs text-muted-foreground">FP</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };
